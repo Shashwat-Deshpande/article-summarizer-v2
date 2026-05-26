@@ -1,89 +1,39 @@
 import streamlit as st
-from transformers import pipeline
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-st.set_page_config(
-    page_title="AI Text Summarizer",
-    page_icon="📝",
-    layout="wide"
-)
+st.title("AI Article Summarizer")
 
 @st.cache_resource
 def load_model():
-    return pipeline(
-        "text2text-generation",
-        model="sshleifer/distilbart-cnn-12-6"
-    )
+    model_name = "sshleifer/distilbart-cnn-12-6"
+    # AutoTokenizer aur AutoModel ka use kar rahe hain
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    return tokenizer, model
 
-summarizer = load_model()
+tokenizer, model = load_model()
 
+text = st.text_area("Paste your article here:", height=200)
 
-def chunk_text(text, chunk_size=500):
-    words = text.split()
-    chunks = []
-
-    for i in range(0, len(words), chunk_size):
-        chunks.append(" ".join(words[i:i + chunk_size]))
-
-    return chunks
-
-
-st.title("📝 AI Text Summarizer")
-st.write("Paste any article or paragraph and get an AI-generated summary.")
-
-text = st.text_area("Enter Text", height=300, placeholder="Paste your article here...")
-
-max_length = st.slider("Summary Length", 30, 200, 80)
-
-if st.button("Generate Summary"):
-
-    if not text.strip():
-        st.warning("Please enter some text.")
-        st.stop()
-
-    with st.spinner("Generating Summary..."):
-
-        chunks = chunk_text(text)
-
-        summaries = []
-        progress_bar = st.progress(0)
-
-        for idx, chunk in enumerate(chunks):
-
-            result = summarizer(
-                chunk,
-                max_length=max_length,
-                min_length=20,
-                do_sample=False
+if st.button("Summarize"):
+    if text:
+        with st.spinner("Summarizing..."):
+            # Model ke liye inputs prepare karo
+            inputs = tokenizer.encode("summarize: " + text, return_tensors="pt", max_length=1024, truncation=True)
+            
+            # Model se summary generate karo
+            summary_ids = model.generate(
+                inputs, 
+                max_length=150, 
+                min_length=30, 
+                length_penalty=2.0, 
+                num_beams=4, 
+                early_stopping=True
             )
-
-            summaries.append(result[0]["generated_text"])
-            progress_bar.progress((idx + 1) / len(chunks))
-
-        combined_summary = " ".join(summaries)
-
-        if len(combined_summary.split()) > 500:
-
-            final_result = summarizer(
-                combined_summary,
-                max_length=max_length,
-                min_length=20,
-                do_sample=False
-            )
-
-            final_summary = final_result[0]["generated_text"]
-
-        else:
-            final_summary = combined_summary
-
-    st.subheader("Summary")
-    st.success(final_summary)
-
-    st.subheader("Statistics")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.metric("Original Words", len(text.split()))
-
-    with col2:
-        st.metric("Summary Words", len(final_summary.split()))
+            
+            # Result decode karo
+            summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+            st.write("### Summary:")
+            st.write(summary)
+    else:
+        st.warning("Please enter some text!")
